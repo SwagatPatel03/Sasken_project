@@ -1,0 +1,33 @@
+# Project Configuration
+project:
+  name: "3GPP Change Detection System"
+  version: "1.0.0"
+  
+# Document Processing
+documents:
+  input_dir: "data/raw"
+  output_dir: "data/processed"
+  supported_formats: ["pdf", "doc", "docx", "html"]
+  
+# Model Configuration
+models:
+  embedding_model: "sentence-transformers/all-MiniLM-L6-v2"
+  llm_model: "gpt-3.5-turbo"  # or local model
+  
+# Change Detection
+change_detection:
+  similarity_threshold: 0.85
+  chunk_size: 512
+  overlap: 50
+  
+# Vector Database
+vector_db:
+  type: "chroma"
+  persist_directory: "data/embeddings"
+  collection_name: "3gpp_changes"
+  
+# QA Bot
+qa_bot:
+  max_context_length: 4000
+  temperature: 0.1
+  top_k: 5

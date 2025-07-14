@@ -1,0 +1,17 @@
+myenv/
+24301-af0.json
+24301-hc0.json
+changes.json
+24301-af0.doc
+24301-hc0.docx
+24301-af0.docx
+New DOCX Document.docx
+__pycache__/
+.vscode/
+.idea/
+*.swp
+*.swo
+.pytest_cache/
+*.pyc
+*.pyo
+*.pyd
