@@ -1,94 +1,88 @@
 # src/main.py
+
 import click
-from parsers.docx_parser import DOCXParser
-from change_detection.detector import ChangeDetector, _flatten_sections, ChangeType
-from qa_bot.bot import QABot
 import json
+import yaml
+
+from parsers.docx_parser import parse_docx, save_as_json
+from utils.version_mapping import map_chunks, save_version_map
+from change_detection.detector import ChangeDetector
+from utils.vector_db import VectorDB
+
+
+# Load configuration
+with open("config/config.yaml", "r", encoding="utf-8") as f:
+    cfg = yaml.safe_load(f)
+
 
 @click.group()
 def cli():
     """3GPP Change Detection System"""
     pass
 
-@cli.command()
-def download():
-    """Download 3GPP specifications"""
-    download_3gpp_specs()
 
 @cli.command()
-def parse():
-    """Parse downloaded specifications"""
-    click.echo("Parsing specifications...")
-    # Implementation
-    # src/main.py, inside @cli.command() def parse():
-    parser = DOCXParser()
-    for key in ["24301-af0", "24301-hc0"]:
-        file_path = f"data/raw/{key}.docx"
-        doc_struct = parser.parse(file_path)
-        # serialize to JSON for quick inspection
-        with open(f"data/processed/{key}.json", "w") as f:
-            f.write(doc_struct.to_json())
-        click.echo(f"✓ Parsed {key}")
+@click.option("--min_tokens", default=50, help="Minimum tokens for merge")
+@click.option("--max_tokens", default=500, help="Maximum tokens per chunk")
+def parse(min_tokens, max_tokens):
+    """Parse DOCX → hierarchical, token-capped chunks."""
+    for rel in ["24301-af0", "24301-hc0"]:
+        src = f"data/raw/{rel}.docx"
+        out = f"data/processed/{rel}_chunks.json"
+        click.echo(f"Parsing {src} …")
+        chunks = parse_docx(src, max_tokens=max_tokens, min_chunk_tokens=min_tokens)
+        save_as_json(chunks, out)
+        click.secho(f"✓ {len(chunks)} chunks → {out}", fg="green")
+
 
 @cli.command()
-@click.option('--debug', is_flag=True, help="Show diff summary")
-def detect(debug):
-    parser = DOCXParser()
-    old_doc = parser.parse("data/raw/24301-af0.docx")
-    new_doc = parser.parse("data/raw/24301-hc0.docx")
+def detect():
+    """Compute version map, detect changes, and rebuild vector DB."""
+    # 1) Load chunk lists
+    def load(path):
+        return json.load(open(path, "r", encoding="utf-8"))
 
-    detector = ChangeDetector()
-    changes = detector.detect_changes(old_doc, new_doc)
+    old_chunks = load("data/processed/24301-af0_chunks.json")
+    new_chunks = load("data/processed/24301-hc0_chunks.json")
 
-    if debug:
-        # Flatten both trees
-        old_map = _flatten_sections(old_doc)
-        new_map = _flatten_sections(new_doc)
+    # 2) Build and save version map
+    click.echo("Mapping old→new chunks…")
+    version_map = map_chunks(old_chunks, new_chunks,
+                             title_weight=0.7, content_weight=0.3,
+                             threshold=0.6)
+    save_version_map(version_map, "data/processed/version_map.json")
+    click.secho(f"✓ Version map with {len(version_map)} entries → data/processed/version_map.json", fg="green")
 
-        old_ids = set(old_map)
-        new_ids = set(new_map)
+    # 3) Detect changes with MOVED support
+    click.echo("Detecting chunk-wise changes…")
+    detector = ChangeDetector(
+        threshold=cfg["change_detection"]["similarity_threshold"],
+        version_map=version_map
+    )
+    changes = detector.detect_changes(old_chunks, new_chunks)
 
-        added_ids   = new_ids   - old_ids
-        removed_ids = old_ids   - new_ids
-        shared_ids  = old_ids & new_ids
+    # 4) Serialize changes
+    changes_path = "data/processed/changes.json"
+    with open(changes_path, "w", encoding="utf-8") as f:
+        json.dump([c.to_dict() for c in changes], f, indent=2, ensure_ascii=False)
+    click.secho(f"✓ Wrote {len(changes)} changes → {changes_path}", fg="green")
 
-        # Of the shared, which really changed?
-        modified_ids = {
-            c.section_id
-            for c in changes
-            if c.change_type == ChangeType.MODIFIED
-        }
+    # 5) Rebuild vector DB
+    click.echo("Updating vector DB…")
+    vdb = VectorDB(
+        persist_directory=cfg["vector_db"]["persist_directory"],
+        model_name=cfg["models"]["embedding_model"]
+    )
+    vdb.store_changes(changes)
+    click.secho("✓ Vector DB updated.", fg="green")
 
-        click.echo(f"Total sections old:    {len(old_ids)}")
-        click.echo(f"Total sections new:    {len(new_ids)}")
-        click.echo(f"→ Added sections:     {len(added_ids)}")
-        click.echo(f"→ Removed sections:   {len(removed_ids)}")
-        click.echo(f"→ Potentially modified: {len(shared_ids)}")
-        click.echo(f"→ Actually modified:  {len(modified_ids)}\n")
-
-        # Show examples
-        click.echo("Sample added IDs:     " + ", ".join(list(added_ids)[:5]))
-        click.echo("Sample removed IDs:   " + ", ".join(list(removed_ids)[:5]))
-        click.echo("Sample modified IDs:  " + ", ".join(list(modified_ids)[:5]))
-
-    """Detect changes between Rel‑15 vs. Rel‑16"""
-    
-
-    detector = ChangeDetector()
-    changes = detector.detect_changes(old_doc, new_doc)
-
-    # Serialize changes to JSON
-    with open("data/processed/changes.json", "w") as f:
-        json_list = [c.to_dict() for c in changes]
-        f.write(json.dumps(json_list, indent=2))
-
-    click.echo(f"✓ Detected {len(changes)} changes")
 
 @cli.command()
 def serve():
-    """Start QA bot server"""
-    click.echo("Starting QA bot server...")
-    # Implementation
+    """Start the QA API server."""
+    import uvicorn
+    uvicorn.run("api:app", host="0.0.0.0", port=8000, reload=False)
+
 
 if __name__ == "__main__":
     cli()

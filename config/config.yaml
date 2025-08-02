@@ -12,7 +12,7 @@ documents:
 # Model Configuration
 models:
   embedding_model: "sentence-transformers/all-MiniLM-L6-v2"
-  llm_model: "gpt-3.5-turbo"  # or local model
+  llm_model: "llama3-70b-8192"  # or local model
   
 # Change Detection
 change_detection:
@@ -22,12 +22,13 @@ change_detection:
   
 # Vector Database
 vector_db:
-  type: "chroma"
+  type: "faiss"
   persist_directory: "data/embeddings"
   collection_name: "3gpp_changes"
   
 # QA Bot
 qa_bot:
-  max_context_length: 4000
+  max_context_length: 6000
   temperature: 0.1
   top_k: 5
+  similarity_threshold: 0.01

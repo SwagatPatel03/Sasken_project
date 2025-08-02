@@ -1,152 +1,145 @@
 # src/change_detection/detector.py
 
+import os
 import difflib
-import json
 from enum import Enum
-from dataclasses import dataclass
-from typing import List, Dict
-
-from fuzzywuzzy import fuzz
-from parsers.base_parser import DocumentSection
+from dataclasses import dataclass, asdict
+from typing import List, Dict, Optional
 
 
 class ChangeType(Enum):
     ADDED    = "added"
     REMOVED  = "removed"
     MODIFIED = "modified"
-    MOVED    = "moved"       # for future use
+    MOVED    = "moved"
 
 
 @dataclass
 class Change:
-    change_type: ChangeType
     section_id: str
+    chunk_id: str
+    change_type: ChangeType
     old_content: str
     new_content: str
     similarity_score: float
-    context: Dict[str, any]
+    moved_to: Optional[str] = None
 
-    def to_dict(self) -> Dict[str, any]:
-        """
-        Convert this Change to a pure‑dict with JSON‑safe values.
-        """
-        return {
-            "change_type": self.change_type.value,
-            "section_id": self.section_id,
-            "old_content": self.old_content,
-            "new_content": self.new_content,
-            "similarity_score": self.similarity_score,
-            "context": self.context,
-        }
+    def to_dict(self) -> Dict:
+        d = asdict(self)
+        d["change_type"] = self.change_type.value
+        if self.moved_to is None:
+            d.pop("moved_to")
+        return d
+
 
 def compute_similarity(a: str, b: str) -> float:
-    """
-    Compute a hybrid similarity score between 0–1 by averaging:
-      - difflib.SequenceMatcher ratio (character-level)
-      - fuzzywuzzy.partial_ratio (token-level)
-    """
-    seq_score = difflib.SequenceMatcher(None, a, b).ratio()
-    fuzz_score = fuzz.partial_ratio(a, b) / 100.0
-    return (seq_score + fuzz_score) / 2
-
-
-def _flatten_sections(root: DocumentSection) -> Dict[str, DocumentSection]:
-    """
-    Recursively build a flat map from section_id to DocumentSection.
-    """
-    flat: Dict[str, DocumentSection] = {}
-    def _rec(sec: DocumentSection):
-        flat[sec.section_id] = sec
-        for sub in sec.subsections:
-            _rec(sub)
-    _rec(root)
-    return flat
+    return difflib.SequenceMatcher(None, a, b).ratio()
 
 
 class ChangeDetector:
-    """
-    Detects ADDED, REMOVED, and MODIFIED changes between two DocumentSection trees.
-    """
+    def __init__(self, threshold: float = 0.85, version_map: Dict[str, Optional[str]] = None):
+        self.threshold = threshold
+        self.version_map = version_map or {}
 
-    def __init__(self, similarity_threshold: float = 0.85):
-        """
-        Args:
-          similarity_threshold: below this score a section is flagged MODIFIED
-        """
-        self.similarity_threshold = similarity_threshold
+    def detect_changes(
+        self,
+        old_chunks: List[Dict],
+        new_chunks: List[Dict]
+    ) -> List[Change]:
+        from collections import defaultdict
 
-    def detect_changes(self,
-                       old_doc: DocumentSection,
-                       new_doc: DocumentSection
-                      ) -> List[Change]:
-        """
-        Compare two DocumentSection trees and return a list of Change objects.
+        old_by_sec = defaultdict(list)
+        new_by_sec = defaultdict(list)
+        for c in old_chunks:
+            old_by_sec[c["section_id"]].append(c)
+        for c in new_chunks:
+            new_by_sec[c["section_id"]].append(c)
 
-        - ADDED:   section_id in new_doc but not in old_doc
-        - REMOVED: section_id in old_doc but not in new_doc
-        - MODIFIED: same section_id exists in both but similarity < threshold
-        """
+        all_secs = set(old_by_sec) | set(new_by_sec)
         changes: List[Change] = []
 
-        # Flatten both trees for quick lookup
-        old_map = _flatten_sections(old_doc)
-        new_map = _flatten_sections(new_doc)
+        for sec in sorted(all_secs):
+            olds = old_by_sec.get(sec, [])
+            news = new_by_sec.get(sec, [])
+            old_list = [c["content"] for c in olds]
+            new_list = [c["content"] for c in news]
 
-        # 1) ADDED
-        for sid, new_sec in new_map.items():
-            if sid not in old_map:
-                changes.append(Change(
-                    change_type=ChangeType.ADDED,
-                    section_id=sid,
-                    old_content="",
-                    new_content=new_sec.content,
-                    similarity_score=1.0,
-                    context={"title": new_sec.title}
-                ))
+            matcher = difflib.SequenceMatcher(None, old_list, new_list)
+            for tag, i1, i2, j1, j2 in matcher.get_opcodes():
+                if tag == "equal":
+                    continue
 
-        # 2) REMOVED
-        for sid, old_sec in old_map.items():
-            if sid not in new_map:
-                changes.append(Change(
-                    change_type=ChangeType.REMOVED,
-                    section_id=sid,
-                    old_content=old_sec.content,
-                    new_content="",
-                    similarity_score=1.0,
-                    context={"title": old_sec.title}
-                ))
+                if tag == "delete":
+                    for idx in range(i1, i2):
+                        c = olds[idx]
+                        # check for MOVED by version_map
+                        moved_to = self.version_map.get(c["chunk_id"])
+                        if moved_to:
+                            changes.append(Change(
+                                section_id=sec,
+                                chunk_id=c["chunk_id"],
+                                change_type=ChangeType.MOVED,
+                                old_content=c["content"],
+                                new_content="",
+                                similarity_score=1.0,
+                                moved_to=moved_to
+                            ))
+                        else:
+                            changes.append(Change(
+                                section_id=sec,
+                                chunk_id=c["chunk_id"],
+                                change_type=ChangeType.REMOVED,
+                                old_content=c["content"],
+                                new_content="",
+                                similarity_score=0.0
+                            ))
 
-        # 3) MODIFIED
-        shared = set(old_map.keys()) & set(new_map.keys())
-        for sid in shared:
-            old_text = old_map[sid].content or ""
-            new_text = new_map[sid].content or ""
-            if old_text != new_text:
-                score = compute_similarity(old_text, new_text)
-                if score < self.similarity_threshold:
-                    changes.append(Change(
-                        change_type=ChangeType.MODIFIED,
-                        section_id=sid,
-                        old_content=old_text,
-                        new_content=new_text,
-                        similarity_score=score,
-                        context={"title": new_map[sid].title}
-                    ))
+                elif tag == "insert":
+                    for idx in range(j1, j2):
+                        c = news[idx]
+                        # skip if this new chunk was already mapped from an old one
+                        if c["chunk_id"] in self.version_map.values():
+                            continue
+                        changes.append(Change(
+                            section_id=sec,
+                            chunk_id=c["chunk_id"],
+                            change_type=ChangeType.ADDED,
+                            old_content="",
+                            new_content=c["content"],
+                            similarity_score=1.0
+                        ))
+
+                elif tag == "replace":
+                    span = min(i2 - i1, j2 - j1)
+                    for k in range(span):
+                        old_c = olds[i1 + k]
+                        new_c = news[j1 + k]
+                        score = compute_similarity(old_c["content"], new_c["content"])
+                        changes.append(Change(
+                            section_id=sec,
+                            chunk_id=f"{old_c['chunk_id']}→{new_c['chunk_id']}",
+                            change_type=ChangeType.MODIFIED,
+                            old_content=old_c["content"],
+                            new_content=new_c["content"],
+                            similarity_score=score
+                        ))
 
         return changes
 
-    def to_json(self, changes: List[Change], **json_kwargs) -> str:
-        """
-        Serialize a list of Change objects to a JSON-formatted string.
-        """
-        out = []
-        for c in changes:
-            out.append({
-                "change_type": c.change_type.value,
-                "section_id": c.section_id,
-                "old_content": c.old_content,
-                "new_content": c.new_content,
-                "similarity_score": c.similarity_score,
-                "context": c.context,
-            })
-        return json.dumps(out, **json_kwargs)
+    def write_html_diff(
+        self,
+        old_text: str,
+        new_text: str,
+        section_id: str,
+        out_dir: str = "data/processed/diffs"
+    ) -> str:
+        os.makedirs(out_dir, exist_ok=True)
+        old_lines = old_text.splitlines()
+        new_lines = new_text.splitlines()
+        differ = difflib.HtmlDiff(tabsize=4, wrapcolumn=80)
+        html_doc = differ.make_file(old_lines, new_lines,
+                                    fromdesc="Rel-15", todesc="Rel-16")
+        out_path = os.path.join(out_dir, f"diff_{section_id.replace('.','_')}.html")
+        with open(out_path, "w", encoding="utf-8") as f:
+            f.write(html_doc)
+        return out_path
