@@ -12,13 +12,14 @@ documents:
 # Model Configuration
 models:
   embedding_model: "sentence-transformers/all-MiniLM-L6-v2"
-  llm_model: "llama3-70b-8192"  # or local model
+  llm_model: "llama-3.3-70b-versatile"  # or local model
   
 # Change Detection
 change_detection:
-  similarity_threshold: 0.85
+  similarity_threshold: 0.75
   chunk_size: 512
-  overlap: 50
+  overlap: 20
+  mapping_threshold: 0.6
   
 # Vector Database
 vector_db:
@@ -28,7 +29,7 @@ vector_db:
   
 # QA Bot
 qa_bot:
-  max_context_length: 6000
-  temperature: 0.1
-  top_k: 5
+  max_context_length: 12000
+  temperature: 0.2
+  top_k: 30
   similarity_threshold: 0.01

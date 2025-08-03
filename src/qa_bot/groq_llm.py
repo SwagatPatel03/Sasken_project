@@ -11,7 +11,7 @@ class GroqLLM:
     Accepts a list of HumanMessage and returns a dict mimicking LangChain’s ChatResult.
     """
 
-    def __init__(self, model_name: str = "llama3-70b-8192", temperature: float = 0.1):
+    def __init__(self, model_name: str = "llama-3.3-70b-versatile", temperature: float = 0.1):
         api_key = os.getenv("GROQ_API_KEY")
         if not api_key:
             raise RuntimeError("GROQ_API_KEY not set in environment")
