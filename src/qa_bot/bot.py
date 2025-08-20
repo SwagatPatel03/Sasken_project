@@ -212,7 +212,7 @@ class QABot:
             f"{specific_context}\n\n"
             "Provide a response in this exact format:\n\n"
             "**ANSWER:**\n[Direct numerical answer with comparison]\n\n"
-            "**EXPLANATION:**\n[Give a list of points explaining what this change means and any relevant "
+            "**EXPLANATION:**\n[Give a list of bullet points explaining what this change means and any relevant "
             "context from the thematic and specific changes shown above]"
         )
         return self._call_llm(prompt)
@@ -265,7 +265,7 @@ class QABot:
             "Write as if you're a specification expert analyzing the changes.\n\n"
             "Provide a response in this exact format:\n\n"
             "**ANSWER:**\n[Direct, clear answer about what changed]\n\n"
-            "**EXPLANATION:**\n[A list providing substantial detail about the changes found. Include:\n"
+            "**EXPLANATION:**\n[A list of bullet points about the changes found. Include:\n"
             "- What specifically was modified/added/removed\n"
             "- The technical significance of these changes\n"
             "- How these changes might impact implementation or functionality\n"

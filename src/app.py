@@ -84,7 +84,7 @@ st.markdown("""
 <div class="main-header">
     <h1>🔍 3GPP Change Detection QA System</h1>
     <p style="margin: 0; font-size: 1.1em; opacity: 0.9;">
-        Ask intelligent questions about changes between 3GPP specification versions (Rel-15 vs Rel-16)
+        Ask intelligent questions about changes between 3GPP specification versions (Rel-10 vs Rel-17)
     </p>
 </div>
 """, unsafe_allow_html=True)
@@ -187,7 +187,7 @@ with col2:
         "How many subsections are in section 4?",
         "What are the main security changes?",
         "List all modifications to authentication procedures",
-        "What new features were added in Rel-16?",
+        "What new features were added in Rel-17?",
         "Compare protocol changes between versions"
     ]
     
@@ -201,82 +201,3 @@ with col2:
             
             st.session_state.messages.append({"role": "assistant", "content": response})
             st.rerun()
-
-# Alternative input section (below the main interface)
-st.markdown("---")
-st.markdown("### 📝 Alternative Input Method")
-
-with st.expander("✍️ Detailed Question Form", expanded=False):
-    with st.form("question_form", clear_on_submit=True):
-        question = st.text_area(
-            "Enter your detailed question:",
-            placeholder="Type your question about 3GPP specification changes here...\n\nFor example:\n- What are the key differences in authentication procedures?\n- Summarize all changes in a specific section\n- List new security features",
-            height=120,
-            help="You can ask complex, multi-part questions here"
-        )
-        
-        col_form1, col_form2, col_form3 = st.columns([1, 1, 2])
-        
-        with col_form1:
-            submitted = st.form_submit_button("🚀 Ask Question", use_container_width=True)
-        
-        with col_form2:
-            if st.form_submit_button("🔄 Reset Form", use_container_width=True):
-                st.rerun()
-
-        if submitted and question.strip():
-            # Add to chat history
-            st.session_state.messages.append({"role": "user", "content": question})
-            
-            # Get response
-            with st.spinner("🔍 Processing your detailed question..."):
-                response = query_api(question, top_k if 'top_k' in locals() else 5)
-            
-            # Add response to chat history
-            st.session_state.messages.append({"role": "assistant", "content": response})
-            
-            # Rerun to show the new messages
-            st.rerun()
-
-# Statistics and info
-if st.session_state.messages:
-    st.markdown("---")
-    col_stats1, col_stats2, col_stats3 = st.columns(3)
-    
-    with col_stats1:
-        st.markdown(f"""
-        <div class="metric-card">
-            <h3 style="margin: 0; color: #667eea;">{len(st.session_state.messages)}</h3>
-            <p style="margin: 0;">Total Messages</p>
-        </div>
-        """, unsafe_allow_html=True)
-    
-    with col_stats2:
-        user_messages = len([msg for msg in st.session_state.messages if msg["role"] == "user"])
-        st.markdown(f"""
-        <div class="metric-card">
-            <h3 style="margin: 0; color: #667eea;">{user_messages}</h3>
-            <p style="margin: 0;">Questions Asked</p>
-        </div>
-        """, unsafe_allow_html=True)
-    
-    with col_stats3:
-        st.markdown(f"""
-        <div class="metric-card">
-            <h3 style="margin: 0; color: #667eea;">Active</h3>
-            <p style="margin: 0;">Session Status</p>
-        </div>
-        """, unsafe_allow_html=True)
-
-# Footer with tips
-st.markdown("---")
-st.markdown("""
-<div style="text-align: center; padding: 1rem; background: #f8f9fa; border-radius: 10px; margin-top: 2rem;">
-    <h4 style="color: #667eea; margin-bottom: 0.5rem;">💡 Pro Tips</h4>
-    <p style="margin: 0;">
-        • Be specific about sections or features you're interested in<br>
-        • Ask for summaries, comparisons, or detailed explanations<br>
-        • Use the example questions to get started quickly
-    </p>
-</div>
-""", unsafe_allow_html=True)
