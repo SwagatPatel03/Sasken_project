@@ -24,6 +24,8 @@ A sophisticated system for detecting, analyzing, and querying changes between di
 
 ### System Requirements
 - Python 3.8+
+- We have specifically use version 3.11.5 for this.
+- Might have some library conflicts with spacy in the newer version like python 3.13.
 - 4GB+ RAM (for vector operations)
 - ~2GB storage (for embeddings and processed data)
 
@@ -95,6 +97,26 @@ This command:
 - Maps chunks between old and new versions
 - Detects all types of changes (ADD, DELETE, MODIFY, MOVE)
 - Generates version mapping and change files
+
+#### 2.1 Build Cluster Events ( Do before Building the db)
+```bash
+python -m scripts.cluster_events
+```
+This command:
+- Builds even clusters using Hierarchical DBSCAN
+- Needs the changes.json files
+- Builds the embedding, pkl and meta files as well
+
+#### 2.2 Extract Version/Release Number (Do before Building the db)
+```bash
+python scripts/extract_versions.py --old "data/raw/24301-af0.docx" --new "data/raw/24301-hc0.docx"
+or
+python scripts/extract_versions.py --old "<directory of the older release>" --new "<directory of the newer release>"
+```
+This command:
+- Extract the release number from each file.
+- It is needed to build the vectorDB.
+- Creates a json file containing the release number.
 
 #### 3. Build Vector Database
 ```bash
@@ -227,7 +249,7 @@ qa_bot:
                               │  │   Tools     │ │   (Streamlit)   ││
                               │  └─────────────┘ └─────────────────┘│
                               │  ┌─────────────────────────────────┐│
-                              │  │        REST API (FastAPI)      ││
+                              │  │        REST API (FastAPI)       ││
                               │  └─────────────────────────────────┘│
                               └─────────────────────────────────────┘
 ```
